@@ -1,15 +1,22 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Stage,
   Layer,
   Text,
   Transformer,
   Image as KonvaImage,
+  Rect,
+  Circle,
+  Line,
+  Arrow,
+  RegularPolygon,
+  Star,
 } from "react-konva";
 import { useNavigate, useParams } from "react-router-dom";
 import { templates } from "@/TemplateData";
-import useImage from "use-image";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -39,16 +46,11 @@ import {
   handleTemplateSize,
 } from "@/features/stageSlice.js";
 import { RoutePricing } from "@/helpers/RouteNames.js";
+import { useCanvasEngine } from "@/hooks/useCanvasEngine";
+import useImage from "use-image";
 
 const Editor = () => {
   const { id } = useParams();
-  const [shapes, setShapes] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
-  const [bgUrl, setBgUrl] = useState(null);
-  const shapeRefs = useRef({});
-  const stageRef = useRef();
-  const trRef = useRef();
-  const originalFontSize = useRef(null);
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
@@ -85,55 +87,72 @@ const Editor = () => {
   const STAGE_WIDTH = 620;
   const STAGE_HEIGHT = 750;
 
-  useEffect(() => {
-    const template = templates.find((t) => t.id === Number(id));
-    if (template) {
-      setShapes(template.shapes);
-      setBgUrl(template.backgroundImage);
-    }
-  }, [id]);
+  const template = useMemo(() => templates.find((t) => t.id === Number(id)), [id]);
+  const engine = useCanvasEngine({
+    templateId: id || null,
+    initialBgUrl: template?.backgroundImage || null,
+    initialShapes: template?.shapes || [],
+    width: STAGE_WIDTH,
+    height: STAGE_HEIGHT,
+  });
 
-  const [backgroundImage] = useImage(bgUrl, "anonymous");
+  const {
+    shapes,
+    setShapes,
+    selectedId,
+    setSelectedId,
+    bgUrl,
+    backgroundImage,
+    stageRef,
+    trRef,
+    stageState,
+    setStageState,
+    addText,
+    deleteSelected,
+    setColor,
+    handleWheel,
+    importImageFromFile,
+    importImageFromUrl,
+    shortcutsEnabled,
+    setShortcutsEnabled,
+  } = engine;
 
-  useEffect(() => {
-    if (trRef.current) {
-      if (selectedId && shapeRefs.current[selectedId]) {
-        trRef.current.nodes([shapeRefs.current[selectedId]]);
-      } else {
-        trRef.current.nodes([]);
-      }
-      trRef.current.getLayer().batchDraw();
-    }
-  }, [selectedId]);
+  // Inline text editing state
+  const [inlineEdit, setInlineEdit] = useState({ id: null, value: "", x: 0, y: 0 });
 
-  const handleTextChange = (text) => {
-    setShapes((prevShapes) =>
-      prevShapes.map((shape) =>
-        shape.id === selectedId ? { ...shape, text } : shape
-      )
-    );
-  };
+  const commitInlineEdit = useCallback(() => {
+    if (!inlineEdit.id) return;
+    setShapes((prev) => prev.map((s) => (s.id === inlineEdit.id ? { ...s, text: inlineEdit.value } : s)));
+    setInlineEdit({ id: null, value: "", x: 0, y: 0 });
+  }, [inlineEdit, setShapes]);
 
-  const handleColorChange = (color) => {
-    setShapes((prevShapes) =>
-      prevShapes.map((shape) =>
-        shape.id === selectedId ? { ...shape, fill: color } : shape
-      )
-    );
-  };
+  const handleTextChange = useCallback((text) => {
+    setShapes((prev) => prev.map((s) => (s.id === selectedId ? { ...s, text } : s)));
+  }, [selectedId, setShapes]);
+
+  const handleColorChange = useCallback((color) => {
+    setColor(color);
+  }, [setColor]);
+
+  const exportDataURL = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return null;
+    // temporarily reset transforms for full export
+    const prev = { x: stage.x(), y: stage.y(), scaleX: stage.scaleX(), scaleY: stage.scaleY() };
+    stage.position({ x: 0, y: 0 });
+    stage.scale({ x: 1, y: 1 });
+    const uri = stage.toDataURL({ pixelRatio: 2, mimeType: "image/png" });
+    // restore
+    stage.position({ x: prev.x, y: prev.y });
+    stage.scale({ x: prev.scaleX, y: prev.scaleY });
+    return uri;
+  }, [stageRef]);
 
   const handleNext = () => {
     if (!stageRef.current) return;
-
-    if (trRef.current) {
-      trRef.current.nodes([]);
-    }
-
-    const dataURL = stageRef.current.toDataURL({
-      pixelRatio: 2,
-      mimeType: "image/png",
-    });
-
+    if (trRef.current) trRef.current.nodes([]);
+    const dataURL = exportDataURL();
+    if (!dataURL) return;
     dispatch(handleStoreStage(dataURL));
     dispatch(handleTemplateId(id));
     dispatch(handleTemplateSize({ width: STAGE_WIDTH, height: STAGE_HEIGHT }));
@@ -142,20 +161,12 @@ const Editor = () => {
 
   const handleDownload = () => {
     if (!stageRef.current) return;
-
-    trRef.current.nodes([]);
-
-    const uri = stageRef.current.toDataURL({
-      pixelRatio: 2,
-      mimeType: "image/png",
-    });
-
-    if (selectedId && shapeRefs.current[selectedId]) {
-      trRef.current.nodes([shapeRefs.current[selectedId]]);
-    }
-
+    if (trRef.current) trRef.current.nodes([]);
+    const uri = exportDataURL();
+    if (!uri) return;
     const link = document.createElement("a");
-    link.download = "invitation.png";
+    const newName = Date.now();
+    link.download = newName + "invitation.png";
     link.href = uri;
     document.body.appendChild(link);
     link.click();
@@ -164,148 +175,352 @@ const Editor = () => {
 
   const handlePDFDownload = () => {
     if (!stageRef.current) return;
-
-    trRef.current.nodes([]);
-
-    const uri = stageRef.current.toDataURL({ pixelRatio: 2 });
-
-    if (selectedId && shapeRefs.current[selectedId]) {
-      trRef.current.nodes([shapeRefs.current[selectedId]]);
-    }
-
-    const pdf = new jsPDF({
-      orientation: "portrait",
-      unit: "px",
-      format: [stageRef.current.width(), stageRef.current.height()],
-    });
-
-    pdf.addImage(
-      uri,
-      "PNG",
-      0,
-      0,
-      stageRef.current.width(),
-      stageRef.current.height()
-    );
+    if (trRef.current) trRef.current.nodes([]);
+    const uri = exportDataURL();
+    if (!uri) return;
+    const pdf = new jsPDF({ orientation: "portrait", unit: "px", format: [STAGE_WIDTH, STAGE_HEIGHT] });
+    pdf.addImage(uri, "PNG", 0, 0, STAGE_WIDTH, STAGE_HEIGHT);
     const newName = Date.now();
     pdf.save(newName + "Invitation.pdf");
   };
 
-  const renderShape = (shape, i) => {
-    const commonProps = {
-      key: shape.id,
-      ref: (node) => (shapeRefs.current[shape.id] = node),
-      draggable: true,
-      onClick: (e) => {
-        e.cancelBubble = true;
-        setSelectedId(shape.id);
-      },
-      onTap: (e) => {
-        e.cancelBubble = true;
-        setSelectedId(shape.id);
-      },
-      onDragMove: (e) => {
-        const x = e.target.x();
-        const y = e.target.y();
-        console.log(`Text ID ${shape.id} → x: ${x}, y: ${y}`);
-      },
-      onDragEnd: (e) => {
-        const updated = {
-          ...shape,
-          x: e.target.x(),
-          y: e.target.y(),
-        };
-        const newShapes = [...shapes];
-        newShapes[i] = updated;
-        setShapes(newShapes);
-        console.log(updated);
-      },
+  const KImg = ({ src, ...rest }) => {
+    const [img] = useImage(src, "anonymous");
+    return <KonvaImage image={img} {...rest} />;
+  };
+
+  const renderShape = useCallback(
+    (shape, i) => {
+      const common = {
+        key: shape.id,
+        id: `node-${shape.id}`,
+        draggable: true,
+        onClick: (e) => {
+          e.cancelBubble = true;
+          setSelectedId(shape.id);
+        },
+        onTap: (e) => {
+          e.cancelBubble = true;
+          setSelectedId(shape.id);
+        },
+        onDragEnd: (e) => {
+          const node = e.target;
+          const updated = { ...shape, x: node.x(), y: node.y(), rotation: node.rotation() };
+          const next = [...shapes];
+          next[i] = updated;
+          setShapes(next);
+        },
+      };
+
+      switch (shape.type) {
+        case "text": {
+          return (
+            <Text
+              {...common}
+              x={shape.x}
+              y={shape.y}
+              text={shape.text}
+              fontSize={shape.fontSize}
+              fill={shape.fill}
+              fontStyle={shape.isItalic ? "italic" : "normal"}
+              fontWeight={shape.isBold ? "bold" : "normal"}
+              align={shape.textAlign || "left"}
+              fontFamily={shape.fontFamily || "Arial"}
+              opacity={shape.opacity ?? 1}
+              letterSpacing={shape.letterSpacing ?? 0}
+              lineHeight={shape.lineHeight ?? 1.2}
+              stroke={shape.stroke}
+              strokeWidth={shape.strokeWidth}
+              rotation={shape.rotation || 0}
+              onDblClick={(e) => {
+                // Position inline textarea relative to stage transform
+                const stage = stageRef.current;
+                if (!stage) return;
+                const scale = stage.scaleX();
+                const canvasPos = stage.container().getBoundingClientRect();
+                const absX = canvasPos.left + (shape.x + (shape.fontSize ? 0 : 0)) * scale + stage.x();
+                const absY = canvasPos.top + shape.y * scale + stage.y();
+                setInlineEdit({ id: shape.id, value: shape.text, x: absX, y: absY });
+                setSelectedId(shape.id);
+                // Hide transformer during edit
+                if (trRef.current) trRef.current.nodes([]);
+              }}
+              onTransformEnd={(e) => {
+                const node = e.target;
+                const newFontSize = (shape.fontSize || 24) * node.scaleY();
+                node.scaleX(1);
+                node.scaleY(1);
+                const updated = { ...shape, x: node.x(), y: node.y(), fontSize: newFontSize, rotation: node.rotation() };
+                const next = [...shapes];
+                next[i] = updated;
+                setShapes(next);
+              }}
+            />
+          );
+        }
+        case "rect": {
+          return (
+            <Rect
+              {...common}
+              x={shape.x}
+              y={shape.y}
+              width={shape.width}
+              height={shape.height}
+              cornerRadius={shape.cornerRadius || 0}
+              fill={shape.fill}
+              stroke={shape.stroke}
+              strokeWidth={shape.strokeWidth}
+              onTransformEnd={(e) => {
+                const node = e.target;
+                const updated = {
+                  ...shape,
+                  x: node.x(),
+                  y: node.y(),
+                  width: Math.max(5, shape.width * node.scaleX()),
+                  height: Math.max(5, shape.height * node.scaleY()),
+                };
+                node.scaleX(1);
+                node.scaleY(1);
+                const next = [...shapes];
+                next[i] = updated;
+                setShapes(next);
+              }}
+            />
+          );
+        }
+        case "circle": {
+          return (
+            <Circle
+              {...common}
+              x={shape.x}
+              y={shape.y}
+              radius={shape.radius}
+              fill={shape.fill}
+              stroke={shape.stroke}
+              strokeWidth={shape.strokeWidth}
+              onTransformEnd={(e) => {
+                const node = e.target;
+                const updated = {
+                  ...shape,
+                  x: node.x(),
+                  y: node.y(),
+                  radius: Math.max(3, shape.radius * node.scaleX()),
+                };
+                node.scaleX(1);
+                node.scaleY(1);
+                const next = [...shapes];
+                next[i] = updated;
+                setShapes(next);
+              }}
+            />
+          );
+        }
+        case "line": {
+          return (
+            <Line
+              {...common}
+              points={shape.points}
+              stroke={shape.stroke}
+              strokeWidth={shape.strokeWidth}
+            />
+          );
+        }
+        case "arrow": {
+          return (
+            <Arrow
+              {...common}
+              points={shape.points}
+              stroke={shape.stroke}
+              strokeWidth={shape.strokeWidth}
+              pointerLength={shape.pointerLength || 10}
+              pointerWidth={shape.pointerWidth || 10}
+            />
+          );
+        }
+        case "image": {
+          return (
+            <KImg
+              {...common}
+              x={shape.x}
+              y={shape.y}
+              width={shape.width}
+              height={shape.height}
+              src={shape.imageSrc}
+              onTransformEnd={(e) => {
+                const node = e.target;
+                const updated = {
+                  ...shape,
+                  x: node.x(),
+                  y: node.y(),
+                  width: Math.max(5, shape.width * node.scaleX()),
+                  height: Math.max(5, shape.height * node.scaleY()),
+                };
+                node.scaleX(1);
+                node.scaleY(1);
+                const next = [...shapes];
+                next[i] = updated;
+                setShapes(next);
+              }}
+            />
+          );
+        }
+        case "triangle": {
+          return (
+            <RegularPolygon
+              {...common}
+              x={shape.x}
+              y={shape.y}
+              sides={shape.sides || 3}
+              radius={shape.radius || 40}
+              fill={shape.fill}
+              stroke={shape.stroke}
+              strokeWidth={shape.strokeWidth}
+              onTransformEnd={(e) => {
+                const node = e.target;
+                const updated = {
+                  ...shape,
+                  x: node.x(),
+                  y: node.y(),
+                  radius: Math.max(3, (shape.radius || 40) * node.scaleX()),
+                };
+                node.scaleX(1);
+                node.scaleY(1);
+                const next = [...shapes];
+                next[i] = updated;
+                setShapes(next);
+              }}
+            />
+          );
+        }
+        case "star": {
+          return (
+            <Star
+              {...common}
+              x={shape.x}
+              y={shape.y}
+              numPoints={shape.numPoints || 5}
+              innerRadius={shape.innerRadius || 20}
+              outerRadius={shape.outerRadius || 40}
+              fill={shape.fill}
+              stroke={shape.stroke}
+              strokeWidth={shape.strokeWidth}
+              onTransformEnd={(e) => {
+                const node = e.target;
+                const updated = {
+                  ...shape,
+                  x: node.x(),
+                  y: node.y(),
+                  innerRadius: Math.max(2, (shape.innerRadius || 20) * node.scaleX()),
+                  outerRadius: Math.max(3, (shape.outerRadius || 40) * node.scaleY()),
+                };
+                node.scaleX(1);
+                node.scaleY(1);
+                const next = [...shapes];
+                next[i] = updated;
+                setShapes(next);
+              }}
+            />
+          );
+        }
+        default:
+          return null;
+      }
+    },
+    [setSelectedId, shapes, setShapes]
+  );
+
+  const handleAddText = addText;
+
+  const handleDeleteText = deleteSelected;
+
+  const selectedShape = useMemo(() => shapes?.find((shape) => shape?.id === selectedId), [shapes, selectedId]);
+
+  // Click-to-place text mode
+  const [placingText, setPlacingText] = useState(false);
+
+  // Emoji catalog and filters
+  const emojiCatalog = useMemo(() => ({
+    all: ["😀","😁","😂","🤣","😊","😍","😘","😎","🤩","😇","🥳","🤗","👍","🙏","🫶","💖","💍","💐","🎉","✨","🥂","🍾","📸","🎁","🕊️","💒","👰","🤵","👩‍❤️‍👨","👩‍❤️‍👩","👨‍❤️‍👨","💞","💕","💓","💗","💘","💝","❤️","🩷","🧡","💛","💚","💙","💜","🤍","🤎","🖤","⭐","🌟","⚡","✔️","❌","❗","❓","🔔","💡","🎵","🎶"],
+    people: ["😀","😁","😂","🤣","😊","😍","😘","😎","🤩","😇","🥳","🤗","👰","🤵","👩‍❤️‍👨","👩‍❤️‍👩","👨‍❤️‍👨"],
+    hearts: ["❤️","🩷","💖","💘","💝","💗","💓","💕","💞","💟","🫶"],
+    symbols: ["⭐","🌟","✨","⚡","✔️","❌","❗","❓","🔔","💡","🎵","🎶"],
+  }), []);
+  const [emojiCategory, setEmojiCategory] = useState("all");
+  const [emojiSearch, setEmojiSearch] = useState("");
+  const filteredEmojis = useMemo(() => {
+    const list = emojiCatalog[emojiCategory] || emojiCatalog.all;
+    if (!emojiSearch.trim()) return list;
+    const q = emojiSearch.trim().toLowerCase();
+    // naive filter: if emoji has known alias substring in a small map, else show all (emoji itself doesn't lower)
+    const alias = {
+      "heart": ["❤️","🩷","💖","💘","💝","💗","💓","💕","💞","💟","🫶"],
+      "star": ["⭐","🌟"],
+      "music": ["🎵","🎶"],
+      "spark": ["✨"],
+      "bell": ["🔔"],
+      "light": ["💡"],
+      "party": ["🎉","🥳","🍾"],
+      "ring": ["💍"],
+      "gift": ["🎁"],
     };
+    const pool = Object.entries(alias)
+      .filter(([k]) => k.includes(q))
+      .flatMap(([, v]) => v);
+    return list.filter((e) => pool.length ? pool.includes(e) : e);
+  }, [emojiCatalog, emojiCategory, emojiSearch]);
 
-    switch (shape.type) {
-      case "text":
-        return (
-          <Text
-            {...commonProps}
-            x={shape.x}
-            y={shape.y}
-            text={shape.text}
-            fontSize={shape.fontSize}
-            fill={shape.fill}
-            fontStyle={shape.isItalic ? "italic" : "normal"}
-            fontWeight={shape.isBold ? "bold" : "normal"}
-            align={shape.textAlign || "center"}
-            fontFamily={shape.fontFamily || "Arial"}
-            onTransformStart={() => {
-              originalFontSize.current = shape.fontSize;
-            }}
-            onTransformEnd={() => {
-              const node = shapeRefs.current[shape.id];
-              const newFontSize = originalFontSize.current * node.scaleY();
-              node.scaleX(1);
-              node.scaleY(1);
+  // reorder and duplicate helpers
+  const duplicateSelected = useCallback(() => {
+    const s = shapes.find((x) => x.id === selectedId);
+    if (!s) return;
+    const copy = { ...s, id: Date.now(), x: (s.x || 0) + 20, y: (s.y || 0) + 20 };
+    setShapes((prev) => [...prev, copy]);
+    setSelectedId(copy.id);
+  }, [selectedId, setShapes, setSelectedId, shapes]);
 
-              const updated = {
-                ...shape,
-                x: node.x(),
-                y: node.y(),
-                fontSize: newFontSize,
-              };
+  const bringForward = useCallback(() => {
+    const idx = shapes.findIndex((x) => x.id === selectedId);
+    if (idx === -1 || idx === shapes.length - 1) return;
+    const next = [...shapes];
+    const [item] = next.splice(idx, 1);
+    next.splice(idx + 1, 0, item);
+    setShapes(next);
+  }, [selectedId, shapes, setShapes]);
 
-              const newShapes = [...shapes];
-              newShapes[i] = updated;
-              setShapes(newShapes);
-            }}
-          />
-        );
-      default:
-        return null;
-    }
+  const sendBackward = useCallback(() => {
+    const idx = shapes.findIndex((x) => x.id === selectedId);
+    if (idx <= 0) return;
+    const next = [...shapes];
+    const [item] = next.splice(idx, 1);
+    next.splice(idx - 1, 0, item);
+    setShapes(next);
+  }, [selectedId, shapes, setShapes]);
+
+  // Image upload helpers
+  const fileInputRef = useRef(null);
+  const handleUploadClick = () => fileInputRef.current?.click();
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) importImageFromFile(file);
+    e.target.value = "";
   };
-
-  const handleAddText = () => {
-    const newId = Date.now();
-    const newTextShape = {
-      id: newId,
-      type: "text",
-      text: "New Text",
-      x: 50,
-      y: 50,
-      fontSize: 24,
-      fill: "black",
-      fontFamily: "Arial",
-      textAlign: "center",
-      isBold: false,
-      isItalic: false,
-    };
-
-    setShapes((prevShapes) => [...prevShapes, newTextShape]);
-    setSelectedId(newId);
+  const handleAddUrl = () => {
+    const url = window.prompt("Paste image URL");
+    if (url) importImageFromUrl(url);
   };
-
-  const handleDeleteText = () => {
-    if (!selectedId) return;
-
-    setShapes((prevShapes) =>
-      prevShapes.filter((shape) => shape.id !== selectedId)
-    );
-    setSelectedId(null);
-
-    if (trRef.current) {
-      trRef.current.nodes([]);
-      trRef.current.getLayer().batchDraw();
-    }
-  };
-
-  const selectedShape = shapes?.find((shape) => shape?.id === selectedId);
 
   return (
     <div className="w-full h-screen flex items-center justify-center bg-neutral-200">
       {/* Canvas Section */}
       <div
-        className="bg-white shadow-md mt-20 overflow-hidden"
+        className="bg-white shadow-md mt-20 overflow-hidden relative"
         style={{ width: STAGE_WIDTH, height: STAGE_HEIGHT }}
       >
+        {placingText && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs rounded px-2 py-1 pointer-events-none select-none z-10">
+            Click on canvas to add text
+          </div>
+        )}
         <Button
           onClick={() => handleNext()}
           className={
@@ -317,14 +532,45 @@ const Editor = () => {
         <Stage
           width={STAGE_WIDTH}
           height={STAGE_HEIGHT}
+          scaleX={stageState.scale}
+          scaleY={stageState.scale}
+          x={stageState.x}
+          y={stageState.y}
+          draggable={stageState.draggable}
+          onDragEnd={(e) => setStageState((s) => ({ ...s, x: e.target.x(), y: e.target.y() }))}
           ref={stageRef}
+          onWheel={handleWheel}
           onMouseDown={(e) => {
+            const stage = e.target.getStage();
             const clickedOnEmpty =
-              e.target === e.target.getStage() ||
-              e.target.attrs.listening === false;
-            if (clickedOnEmpty) {
-              setSelectedId(null);
+              e.target === stage || e.target.attrs.listening === false;
+            if (placingText && clickedOnEmpty) {
+              const pointer = stage.getPointerPosition();
+              const scale = stage.scaleX() || 1;
+              const x = (pointer.x - stage.x()) / scale;
+              const y = (pointer.y - stage.y()) / scale;
+              const newId = Date.now();
+              setShapes((prev) => [
+                ...prev,
+                {
+                  id: newId,
+                  type: "text",
+                  text: "New Text",
+                  x,
+                  y,
+                  fontSize: 24,
+                  fill: "black",
+                  fontFamily: "Arial",
+                  textAlign: "left",
+                  isBold: false,
+                  isItalic: false,
+                },
+              ]);
+              setSelectedId(newId);
+              setPlacingText(false);
+              return;
             }
+            if (clickedOnEmpty) setSelectedId(null);
           }}
         >
           <Layer>
@@ -345,7 +591,7 @@ const Editor = () => {
             {shapes.map((shape, i) => renderShape(shape, i))}
 
             {/* Transformer */}
-            <Transformer ref={trRef} />
+            <Transformer ref={trRef} rotateEnabled={true} enabledAnchors={["top-left","top-right","bottom-left","bottom-right"]} />
           </Layer>
         </Stage>
       </div>
@@ -357,6 +603,15 @@ const Editor = () => {
             <FiCodesandbox />
             Elements
           </h3>
+          <div className="mb-4">
+            <Button title="Add Text" variant={"outline"} onClick={() => setPlacingText(true)} className="w-full flex items-center gap-2 justify-center">
+              <CiText />
+              <span>Add Text</span>
+            </Button>
+            {placingText && (
+              <div className="text-xs text-violet-700 mt-1">Placing… click on canvas</div>
+            )}
+          </div>
           <h3 className="flex items-center gap-2 mb-4 text-xl font-semibold border-b pb-2">
             <PiTextboxLight />
             Edit text
@@ -450,9 +705,12 @@ const Editor = () => {
               <VscItalic />
             </Button>
 
-            <Button onClick={handleAddText} variant={"outline"}>
+            <Button title="Add Text" onClick={() => setPlacingText(true)} variant={"outline"}>
               <CiText />
             </Button>
+            {placingText && (
+              <span className="text-xs text-violet-700 self-center">Placing…</span>
+            )}
 
             <Button
               onClick={handleDeleteText}
@@ -484,7 +742,71 @@ const Editor = () => {
                 ))}
               </SelectContent>
             </Select>
+
+              <Button variant={"outline"} onClick={duplicateSelected}>Duplicate</Button>
+              <Button variant={"outline"} onClick={bringForward}>Front</Button>
+              <Button variant={"outline"} onClick={sendBackward}>Back</Button>
           </div>
+
+            {selectedShape?.type === "text" && (
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm">Letter Spacing</label>
+                    <Input
+                      type="number"
+                      value={selectedShape.letterSpacing ?? 0}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value || 0);
+                        setShapes((prev) => prev.map((s) => s.id === selectedId ? { ...s, letterSpacing: v } : s));
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm">Line Height</label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={selectedShape.lineHeight ?? 1.2}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value || 1.2);
+                        setShapes((prev) => prev.map((s) => s.id === selectedId ? { ...s, lineHeight: v } : s));
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 items-end">
+                  <div>
+                    <label className="text-sm">Stroke Color</label>
+                    <Input
+                      type="color"
+                      value={selectedShape.stroke || "#000000"}
+                      onChange={(e) => setShapes((prev) => prev.map((s) => s.id === selectedId ? { ...s, stroke: e.target.value } : s))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm">Stroke Width</label>
+                    <Slider
+                      min={0}
+                      max={20}
+                      step={1}
+                      value={[selectedShape.strokeWidth ?? 0]}
+                      onValueChange={([v]) => setShapes((prev) => prev.map((s) => s.id === selectedId ? { ...s, strokeWidth: v } : s))}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm">Opacity</label>
+                  <Slider
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={[selectedShape.opacity ?? 1]}
+                    onValueChange={([v]) => setShapes((prev) => prev.map((s) => s.id === selectedId ? { ...s, opacity: v } : s))}
+                  />
+                </div>
+              </div>
+            )}
 
           <h3 className="flex items-center gap-2 mb-4 mt-6 text-xl font-semibold border-b pb-2">
             <IoColorPaletteOutline />
@@ -509,8 +831,99 @@ const Editor = () => {
               />
             </div>
           </div>
+          <div className="mt-6 flex gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button variant={"outline"} onClick={handleUploadClick}>
+              Upload Image
+            </Button>
+            <Button variant={"outline"} onClick={handleAddUrl}>
+              Add via URL
+            </Button>
+            <Button variant={"outline"} onClick={() => setShortcutsEnabled(!shortcutsEnabled)}>
+              Shortcuts: {shortcutsEnabled ? "On" : "Off"}
+            </Button>
+          </div>
+
+          <h3 className="flex items-center gap-2 mb-4 mt-6 text-xl font-semibold border-b pb-2">Emoji</h3>
+          <div className="flex gap-2 mb-3">
+            <Select value={emojiCategory} onValueChange={(v) => setEmojiCategory(v)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="people">People</SelectItem>
+                <SelectItem value="hearts">Hearts</SelectItem>
+                <SelectItem value="symbols">Symbols</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Search (heart, star, music)"
+              value={emojiSearch}
+              onChange={(e) => setEmojiSearch(e.target.value)}
+              className="max-w-[200px]"
+            />
+          </div>
+          <div className="grid grid-cols-6 gap-2 max-h-40 overflow-auto pr-1">
+            {filteredEmojis.map((emo) => (
+              <Button
+                key={emo}
+                variant={"outline"}
+                onClick={() => {
+                  const newId = Date.now();
+                  setShapes((prev) => [
+                    ...prev,
+                    { id: newId, type: "text", text: emo, x: 260, y: 320, fontSize: 48, fill: "#000", fontFamily: "Arial", textAlign: "center", isBold: false, isItalic: false },
+                  ]);
+                  setSelectedId(newId);
+                }}
+                className="px-2 py-1"
+              >
+                {emo}
+              </Button>
+            ))}
+          </div>
         </>
       </div>
+      {inlineEdit.id && (
+        <textarea
+          autoFocus
+          value={inlineEdit.value}
+          onChange={(e) => setInlineEdit((prev) => ({ ...prev, value: e.target.value }))}
+          onBlur={commitInlineEdit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              e.stopPropagation();
+              commitInlineEdit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              setInlineEdit({ id: null, value: "", x: 0, y: 0 });
+            }
+          }}
+          style={{
+            position: "absolute",
+            top: inlineEdit.y,
+            left: inlineEdit.x,
+            minWidth: 180,
+            padding: "4px 8px",
+            fontSize: selectedShape?.fontSize || 24,
+            fontFamily: selectedShape?.fontFamily || "Arial",
+            color: selectedShape?.fill || "#000",
+            background: "#ffffffcc",
+            border: "1px solid #888",
+            borderRadius: 4,
+            zIndex: 50,
+          }}
+        />
+      )}
     </div>
   );
 };

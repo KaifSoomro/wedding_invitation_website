@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import AppSidebar from "./components/AppSidebar";
 import { SidebarProvider } from "./components/ui/sidebar";
 import TempSidebar from "./components/TempSidebar";
+import Footer from "./components/Footer";
 import {
   RouteContact,
   RouteEditor,
@@ -24,10 +25,11 @@ const Layout = () => {
   return (
     <SidebarProvider>
       {getSidebar()}
-      <main className="w-full">
-        <div className="w-full px-8">
+      <main id="main-content" className="w-full min-h-screen flex flex-col" role="main">
+        <div className="w-full px-8 flex-1">
           <Outlet />
         </div>
+        <Footer />
       </main>
     </SidebarProvider>
   );
