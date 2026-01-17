@@ -26,6 +26,7 @@ const App = () => {
   return (
     <Router>
       <SkipToContent />
+      
       <Routes>
         {/* Editor routes (no navbar, full-screen) */}
         <Route path={RouteEditor + "/:id"} element={<CanvasEditor />} />
