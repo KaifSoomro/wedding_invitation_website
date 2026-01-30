@@ -38,7 +38,6 @@ export function useCanvasEngine({
   // zoom and pan
   const scaleBy = 1.05;
   const [stageState, setStageState] = useState({ scale: 1, x: 0, y: 0, draggable: false });
-  const [shortcutsEnabled, setShortcutsEnabled] = useState(true);
 
   // Persistence key
   const persistKey = useMemo(() => (templateId ? `editor:${templateId}` : `editor:blank`), [templateId]);
@@ -246,83 +245,6 @@ export function useCanvasEngine({
     });
   }, [selectedId, pushHistory]);
 
-  // keyboard shortcuts
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      // prevent browser defaults for some combos when over canvas
-      const inCanvas = !!stageRef.current;
-      if (!inCanvas) return;
-
-      // ignore shortcuts while typing in inputs/textareas/contentEditable
-      const ae = document.activeElement;
-      const tag = ae?.tagName?.toLowerCase();
-      const typing = tag === "input" || tag === "textarea" || ae?.isContentEditable;
-      if (typing) return;
-
-      if (!shortcutsEnabled) return;
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
-        e.preventDefault();
-        redo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
-        e.preventDefault();
-        // new/clear document
-        pushHistory(shapes);
-        setShapes([]);
-        setSelectedId(null);
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        if (selectedId) {
-          e.preventDefault();
-          deleteSelected();
-        }
-      } else if (e.key.toLowerCase() === "t") {
-        addText();
-      } else if (e.key.toLowerCase() === "r") {
-        addRect();
-      } else if (e.key.toLowerCase() === "o") {
-        addCircle();
-      } else if (e.key.toLowerCase() === "l") {
-        addLine();
-      } else if (e.key.toLowerCase() === "a") {
-        addArrow();
-      } else if (e.key.toLowerCase() === "p") {
-        addTriangle();
-      } else if (e.key.toLowerCase() === "s") {
-        addStar();
-      } else if (e.key.toLowerCase() === "i") {
-        // open hidden file input for image import
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = "image/*";
-        input.onchange = (ev) => {
-          const file = ev.target.files?.[0];
-          if (file) importImageFromFile(file);
-        };
-        input.click();
-      } else if (e.code === "Space") {
-        // enable stage panning while space held
-        setStageState((s) => ({ ...s, draggable: true }));
-      } else if (e.key.toLowerCase() === "h") {
-        // add built-in heart sticker
-        addSticker("heart");
-      }
-    };
-
-    const onKeyUp = (e) => {
-      if (e.code === "Space") setStageState((s) => ({ ...s, draggable: false }));
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [addArrow, addCircle, addLine, addRect, addText, deleteSelected, importImageFromFile, redo, selectedId, shapes, undo, pushHistory, shortcutsEnabled]);
-
   // drag & drop import
   useEffect(() => {
     const stage = stageRef.current;
@@ -387,8 +309,6 @@ export function useCanvasEngine({
     trRef,
     stageState,
     setStageState,
-    shortcutsEnabled,
-    setShortcutsEnabled,
 
     // shape actions
     addText,

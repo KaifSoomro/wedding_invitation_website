@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { jsPDF } from "jspdf";
-import { templates } from "@/TemplateData";
+import { templates as builtInTemplates } from "@/TemplateData";
+import { templateStorage } from "@/services/templateStorage";
 import { useCanvasEngine } from "@/hooks/useCanvasEngine";
 import { EditorLayout } from "@/components/editor/EditorLayout";
 import { EditorToolbar } from "@/components/editor/EditorToolbar";
@@ -9,6 +10,10 @@ import { ToolsPanel } from "@/components/editor/ToolsPanel";
 import { PropertiesPanel } from "@/components/editor/PropertiesPanel";
 import { CanvasArea } from "@/components/editor/CanvasArea";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { SaveDesignModal } from "@/components/editor/SaveDesignModal";
+import { MyDesignsModal } from "@/components/editor/MyDesignsModal";
+import { SaveTemplateModal } from "@/components/editor/SaveTemplateModal";
+import { ManageTemplatesModal } from "@/components/editor/ManageTemplatesModal";
 import {
   Dialog,
   DialogContent,
@@ -36,9 +41,14 @@ const EditorContent = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
+  // Load merged templates (built-in + custom)
+  const allTemplates = useMemo(() => {
+    return templateStorage.getMergedTemplates(builtInTemplates);
+  }, []);
+
   const template = useMemo(
-    () => (id ? templates.find((t) => t.id === Number(id)) : null),
-    [id]
+    () => (id ? allTemplates.find((t) => t.id === Number(id)) : null),
+    [id, allTemplates]
   );
 
   const engine = useCanvasEngine({
@@ -59,17 +69,9 @@ const EditorContent = () => {
     trRef,
     stageState,
     setStageState,
-    addText,
-    addRect,
-    addCircle,
-    addTriangle,
-    addStar,
-    addLine,
-    addArrow,
     deleteSelected,
     setColor,
     importImageFromFile,
-    importImageFromUrl,
     undo,
     redo,
     handleWheel,
@@ -81,11 +83,11 @@ const EditorContent = () => {
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState("png");
   const [exportQuality, setExportQuality] = useState(2);
-
-  // History tracking
-  const historyRef = useRef({ past: [], future: [] });
-  const canUndo = historyRef.current.past.length > 0;
-  const canRedo = historyRef.current.future.length > 0;
+  const [saveDesignModalOpen, setSaveDesignModalOpen] = useState(false);
+  const [myDesignsModalOpen, setMyDesignsModalOpen] = useState(false);
+  const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false);
+  const [manageTemplatesModalOpen, setManageTemplatesModalOpen] = useState(false);
+  const [currentTemplateId, setCurrentTemplateId] = useState(id ? Number(id) : null);
 
   // Place shape listener
   React.useEffect(() => {
@@ -160,6 +162,26 @@ const EditorContent = () => {
             fill: "#94a3b8",
             stroke: "#000",
             strokeWidth: 1,
+          };
+          break;
+        case "line":
+          newShape = {
+            id,
+            type: "line",
+            points: [x, y, x + 100, y + 100],
+            stroke: "#000",
+            strokeWidth: 3,
+          };
+          break;
+        case "arrow":
+          newShape = {
+            id,
+            type: "arrow",
+            points: [x, y, x + 150, y],
+            stroke: "#000",
+            strokeWidth: 3,
+            pointerLength: 12,
+            pointerWidth: 12,
           };
           break;
         default:
@@ -326,6 +348,47 @@ const EditorContent = () => {
     [selectedId, shapes, setShapes]
   );
 
+  const handleSaveDesign = useCallback(() => {
+    setSaveDesignModalOpen(true);
+  }, []);
+
+  const handleLoadDesign = useCallback(
+    (design) => {
+      if (design.shapes) {
+        setShapes(design.shapes);
+        setSelectedId(null);
+      }
+      if (design.backgroundImage) {
+        engine.setBgUrl(design.backgroundImage);
+      }
+    },
+    [setShapes, setSelectedId, engine]
+  );
+
+  const handleSaveTemplate = useCallback(() => {
+    setSaveTemplateModalOpen(true);
+  }, []);
+
+  const handleLoadTemplate = useCallback(
+    (template) => {
+      if (template.shapes) {
+        setShapes(template.shapes);
+        setSelectedId(null);
+      }
+      if (template.backgroundImage) {
+        engine.setBgUrl(template.backgroundImage);
+      }
+      if (template.id) {
+        setCurrentTemplateId(template.id);
+      }
+    },
+    [setShapes, setSelectedId, engine]
+  );
+
+  const handleManageTemplates = useCallback(() => {
+    setManageTemplatesModalOpen(true);
+  }, []);
+
   return (
     <>
       <input
@@ -336,18 +399,56 @@ const EditorContent = () => {
         onChange={handleFileChange}
       />
 
+      <SaveDesignModal
+        open={saveDesignModalOpen}
+        onOpenChange={setSaveDesignModalOpen}
+        shapes={shapes}
+        backgroundImage={engine.bgUrl}
+        onSaveSuccess={() => {
+          // Optional: show success message
+        }}
+      />
+
+      <MyDesignsModal
+        open={myDesignsModalOpen}
+        onOpenChange={setMyDesignsModalOpen}
+        onLoadDesign={handleLoadDesign}
+      />
+
+      <SaveTemplateModal
+        open={saveTemplateModalOpen}
+        onOpenChange={setSaveTemplateModalOpen}
+        shapes={shapes}
+        backgroundImage={engine.bgUrl}
+        templateId={currentTemplateId}
+        currentTemplate={template}
+        onSaveSuccess={(template) => {
+          setCurrentTemplateId(template.id);
+        }}
+      />
+
+      <ManageTemplatesModal
+        open={manageTemplatesModalOpen}
+        onOpenChange={setManageTemplatesModalOpen}
+        onLoadTemplate={handleLoadTemplate}
+      />
+
       <EditorLayout
         topToolbar={
           <EditorToolbar
             onUndo={undo}
             onRedo={redo}
-            canUndo={canUndo}
-            canRedo={canRedo}
+            canUndo={true}
+            canRedo={true}
             onZoomIn={handleZoomIn}
             onZoomOut={handleZoomOut}
             onZoomReset={handleZoomReset}
             zoomLevel={stageState.scale * 100}
             onExport={() => setExportModalOpen(true)}
+            onSaveDesign={handleSaveDesign}
+            onOpenMyDesigns={() => setMyDesignsModalOpen(true)}
+            onSaveTemplate={handleSaveTemplate}
+            onManageTemplates={handleManageTemplates}
             onSelectMode={() => {
               setCurrentTool("select");
               setPlacingTool(null);

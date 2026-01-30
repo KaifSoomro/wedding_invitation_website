@@ -24,6 +24,8 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize,
+  Save,
+  FolderOpen,
 } from "lucide-react";
 import { ShortcutsHelp } from "./ShortcutsHelp";
 
@@ -42,6 +44,10 @@ export const EditorToolbar = ({
   onAddText,
   onAddShape,
   onAddImage,
+  onSaveDesign,
+  onOpenMyDesigns,
+  onSaveTemplate,
+  onManageTemplates,
   currentTool = "select",
 }) => {
   const tools = [
@@ -50,10 +56,10 @@ export const EditorToolbar = ({
     { id: "rect", icon: Square, label: "Rectangle (R)", action: () => onAddShape("rect") },
     { id: "circle", icon: Circle, label: "Circle (O)", action: () => onAddShape("circle") },
     { id: "triangle", icon: Triangle, label: "Triangle (P)", action: () => onAddShape("triangle") },
-    { id: "star", icon: Star, label: "Star (S)", action: () => onAddShape("star") },
+    { id: "star", icon: Star, label: "Star", action: () => onAddShape("star") },
     { id: "line", icon: Minus, label: "Line (L)", action: () => onAddShape("line") },
     { id: "arrow", icon: MoveRight, label: "Arrow (A)", action: () => onAddShape("arrow") },
-    { id: "image", icon: Image, label: "Image (I)", action: onAddImage },
+    { id: "image", icon: Image, label: "Image", action: onAddImage },
   ];
 
   return (
@@ -164,6 +170,79 @@ export const EditorToolbar = ({
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 <p className="text-xs">Reset Zoom</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+
+          {/* Help */}
+          <ShortcutsHelp />
+
+          {/* Save & My Designs */}
+          <div className="flex items-center gap-1 border-r pr-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onSaveDesign}
+                  className="h-8 w-8 p-0"
+                >
+                  <Save className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">Save Design</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onOpenMyDesigns}
+                  className="h-8 w-8 p-0"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">My Designs</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+
+          {/* Save & Manage Templates */}
+          <div className="flex items-center gap-1 border-r pr-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onSaveTemplate}
+                  className="h-8 w-8 p-0"
+                >
+                  <Save className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">Save as Template</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onManageTemplates}
+                  className="h-8 w-8 p-0"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">Manage Templates</p>
               </TooltipContent>
             </Tooltip>
           </div>

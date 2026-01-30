@@ -16,10 +16,8 @@ const shortcuts = [
     { keys: "R", desc: "Add Rectangle" },
     { keys: "O", desc: "Add Circle" },
     { keys: "P", desc: "Add Triangle" },
-    { keys: "S", desc: "Add Star" },
     { keys: "L", desc: "Add Line" },
     { keys: "A", desc: "Add Arrow" },
-    { keys: "I", desc: "Import Image" },
   ]},
   { category: "Editing", items: [
     { keys: "Ctrl/Cmd + Z", desc: "Undo" },
