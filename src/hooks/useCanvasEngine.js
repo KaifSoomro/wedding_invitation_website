@@ -200,8 +200,37 @@ export function useCanvasEngine({
   // import image
   const addImageFromElement = useCallback((imgEl) => {
     const id = uid();
-    addShape({ id, type: "image", x: 100, y: 100, width: imgEl.naturalWidth, height: imgEl.naturalHeight, imageSrc: imgEl.src, ...defaultStyles });
-  }, [addShape]);
+    
+    // Scale image to fit within canvas while maintaining aspect ratio
+    const maxWidth = width * 0.8; // 80% of canvas width
+    const maxHeight = height * 0.8; // 80% of canvas height
+    
+    let imgWidth = imgEl.naturalWidth;
+    let imgHeight = imgEl.naturalHeight;
+    
+    // Calculate scale to fit within max dimensions
+    const scaleX = maxWidth / imgWidth;
+    const scaleY = maxHeight / imgHeight;
+    const scale = Math.min(scaleX, scaleY, 1); // Don't upscale, only downscale if needed
+    
+    imgWidth = imgWidth * scale;
+    imgHeight = imgHeight * scale;
+    
+    // Center the image on canvas
+    const x = (width - imgWidth) / 2;
+    const y = (height - imgHeight) / 2;
+    
+    addShape({ 
+      id, 
+      type: "image", 
+      x, 
+      y, 
+      width: imgWidth, 
+      height: imgHeight, 
+      imageSrc: imgEl.src, 
+      ...defaultStyles 
+    });
+  }, [addShape, width, height]);
 
   const importImageFromFile = useCallback((file) => {
     if (!file || !file.type.startsWith("image/")) return;
@@ -307,6 +336,32 @@ export function useCanvasEngine({
     setStageState((s) => ({ ...s, scale: newScale, x: newPos.x, y: newPos.y }));
   }, [scaleBy, stageState.scale]);
 
+  // Convert background to a manageable layer
+  const convertBackgroundToLayer = useCallback(() => {
+    if (!bgUrl) return;
+    
+    // Check if background already exists as a shape
+    const bgExists = shapes.some(s => s.type === "image" && s.imageSrc === bgUrl && s.isBackground === true);
+    if (bgExists) return;
+    
+    const id = uid();
+    // Add as first shape (bottom layer)
+    const bgShape = {
+      id,
+      type: "image",
+      x: 0,
+      y: 0,
+      width: width,
+      height: height,
+      imageSrc: bgUrl,
+      isBackground: true, // Mark as background for identification
+      ...defaultStyles
+    };
+    
+    setShapes(prev => [bgShape, ...prev]); // Add at beginning (bottom)
+    setBgUrl(null); // Clear the non-interactive background
+  }, [bgUrl, shapes, width, height, setShapes]);
+
   // public API
   return {
     // state
@@ -338,6 +393,7 @@ export function useCanvasEngine({
     importImageFromFile,
     importImageFromUrl,
     addSticker,
+    convertBackgroundToLayer,
     undo,
     redo,
     handleWheel,

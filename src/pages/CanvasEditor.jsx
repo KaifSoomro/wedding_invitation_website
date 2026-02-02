@@ -73,6 +73,7 @@ const EditorContent = () => {
     deleteSelected,
     setColor,
     importImageFromFile,
+    convertBackgroundToLayer,
     undo,
     redo,
     handleWheel,
@@ -199,6 +200,26 @@ const EditorContent = () => {
     window.addEventListener("placeShape", handlePlaceShape);
     return () => window.removeEventListener("placeShape", handlePlaceShape);
   }, [placingTool, setShapes, setSelectedId]);
+
+  // Convert background listener
+  React.useEffect(() => {
+    const handleConvertBackground = () => {
+      convertBackgroundToLayer();
+    };
+    window.addEventListener("convertBackground", handleConvertBackground);
+    return () => window.removeEventListener("convertBackground", handleConvertBackground);
+  }, [convertBackgroundToLayer]);
+
+  // Auto-convert background to layer on template load
+  React.useEffect(() => {
+    // Small delay to ensure background image is loaded
+    const timer = setTimeout(() => {
+      if (backgroundImage) {
+        convertBackgroundToLayer();
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [template?.id]); // Only run when template changes
 
   // Tool actions
   const handleAddText = useCallback(() => {

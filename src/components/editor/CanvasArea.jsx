@@ -74,11 +74,19 @@ export const CanvasArea = ({
         id: `node-${shape.id}`,
         draggable: !isLocked,
         onClick: (e) => {
+          if (placingTool) {
+            // If placing tool is active, don't select, let the stage handler place the new element
+            return;
+          }
           if (isLocked) return;
           e.cancelBubble = true;
           setSelectedId(shape.id);
         },
         onTap: (e) => {
+          if (placingTool) {
+            // If placing tool is active, don't select
+            return;
+          }
           if (isLocked) return;
           e.cancelBubble = true;
           setSelectedId(shape.id);
@@ -387,7 +395,7 @@ export const CanvasArea = ({
           return null;
       }
     },
-    [setSelectedId, shapes, setShapes, width, height, stageRef, trRef]
+    [setSelectedId, shapes, setShapes, width, height, stageRef, trRef, placingTool]
   );
 
   const selectedShape = shapes.find((s) => s.id === selectedId);
@@ -398,6 +406,24 @@ export const CanvasArea = ({
       {placingTool && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-violet-600 text-white text-sm rounded-md px-3 py-1.5 shadow-lg z-10 pointer-events-none">
           Click on canvas to place {placingTool}
+        </div>
+      )}
+      
+      {/* Background convert hint */}
+      {backgroundImage && (
+        <div className="absolute top-4 right-4 bg-amber-500 text-white text-xs rounded-md px-3 py-1.5 shadow-lg z-10">
+          <div className="flex items-center gap-2">
+            <span>Background image is not editable</span>
+            <button 
+              onClick={() => {
+                const event = new CustomEvent("convertBackground");
+                window.dispatchEvent(event);
+              }}
+              className="bg-white text-amber-600 px-2 py-0.5 rounded text-xs font-medium hover:bg-amber-50"
+            >
+              Make Editable
+            </button>
+          </div>
         </div>
       )}
 
