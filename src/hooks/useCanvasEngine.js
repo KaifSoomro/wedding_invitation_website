@@ -223,11 +223,25 @@ export function useCanvasEngine({
     img.src = url;
   }, [addImageFromElement]);
 
-  const addSticker = useCallback((name) => {
-    if (!name) return;
-    const path = `/assets/stickers/${name}.svg`;
-    importImageFromUrl(path);
-  }, [importImageFromUrl]);
+  const addSticker = useCallback((emoji) => {
+    if (!emoji) return;
+    // Add emoji as text element instead of loading SVG files
+    const id = uid();
+    addShape({
+      id,
+      type: "text",
+      text: emoji,
+      x: 260,
+      y: 320,
+      fontSize: 48,
+      fill: "#000",
+      fontFamily: "Arial",
+      textAlign: "center",
+      isBold: false,
+      isItalic: false,
+      ...defaultStyles,
+    });
+  }, [addShape]);
 
   // color handling (applies to text fill or shapes fill/stroke)
   const setColor = useCallback((color) => {

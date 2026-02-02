@@ -14,6 +14,7 @@ import {
 } from "react-konva";
 import { useParams } from "react-router-dom";
 import { templates } from "@/TemplateData";
+import { templateStorage } from "@/services/templateStorage";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -53,8 +54,17 @@ const NewEditor = () => {
   const STAGE_WIDTH = 620;
   const STAGE_HEIGHT = 750;
 
-  // prepare initial template
-  const template = useMemo(() => templates.find((t) => t.id === Number(id)), [id]);
+  // Load template from merged sources (built-in + localStorage)
+  const template = useMemo(() => {
+    const mergedTemplates = templateStorage.getMergedTemplates(templates);
+    const found = mergedTemplates.find((t) => t.id === Number(id));
+    
+    if (!found) {
+      console.warn(`Template with ID ${id} not found`);
+    }
+    
+    return found;
+  }, [id]);
 
   const engine = useCanvasEngine({
     templateId: id || null,

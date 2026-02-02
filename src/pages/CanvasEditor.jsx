@@ -8,6 +8,7 @@ import { EditorLayout } from "@/components/editor/EditorLayout";
 import { EditorToolbar } from "@/components/editor/EditorToolbar";
 import { ToolsPanel } from "@/components/editor/ToolsPanel";
 import { PropertiesPanel } from "@/components/editor/PropertiesPanel";
+import { LayersPanel } from "@/components/editor/LayersPanel";
 import { CanvasArea } from "@/components/editor/CanvasArea";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { SaveDesignModal } from "@/components/editor/SaveDesignModal";
@@ -88,6 +89,7 @@ const EditorContent = () => {
   const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false);
   const [manageTemplatesModalOpen, setManageTemplatesModalOpen] = useState(false);
   const [currentTemplateId, setCurrentTemplateId] = useState(id ? Number(id) : null);
+  const [showLayersPanel, setShowLayersPanel] = useState(true);
 
   // Place shape listener
   React.useEffect(() => {
@@ -338,14 +340,37 @@ const EditorContent = () => {
       const [item] = next.splice(idx, 1);
 
       if (action === "front") {
+        // Bring to front - move to end of array
         next.push(item);
       } else if (action === "back") {
+        // Send to back - move to beginning of array
         next.unshift(item);
+      } else if (action === "forward") {
+        // Move forward one layer
+        const newIdx = Math.min(idx + 1, shapes.length - 1);
+        next.splice(newIdx, 0, item);
+      } else if (action === "backward") {
+        // Move backward one layer
+        const newIdx = Math.max(idx - 1, 0);
+        next.splice(newIdx, 0, item);
       }
 
       setShapes(next);
     },
     [selectedId, shapes, setShapes]
+  );
+
+  const handleReplaceImage = useCallback(
+    (shapeId, newImageSrc) => {
+      setShapes((prev) =>
+        prev.map((shape) =>
+          shape.id === shapeId && shape.type === "image"
+            ? { ...shape, imageSrc: newImageSrc }
+            : shape
+        )
+      );
+    },
+    [setShapes]
   );
 
   const handleSaveDesign = useCallback(() => {
@@ -467,13 +492,59 @@ const EditorContent = () => {
           />
         }
         rightPanel={
-          <PropertiesPanel
-            selectedShape={selectedShape}
-            onUpdate={handleUpdateShape}
-            onDelete={deleteSelected}
-            onDuplicate={handleDuplicate}
-            onLayerAction={handleLayerAction}
-          />
+          <div className="h-full flex flex-col">
+            {/* Tabs */}
+            <div className="flex-none border-b bg-white">
+              <div className="flex">
+                <button
+                  onClick={() => setShowLayersPanel(false)}
+                  className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+                    !showLayersPanel
+                      ? "border-b-2 border-violet-600 text-violet-600"
+                      : "text-neutral-600 hover:text-neutral-900"
+                  }`}
+                >
+                  Properties
+                </button>
+                <button
+                  onClick={() => setShowLayersPanel(true)}
+                  className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+                    showLayersPanel
+                      ? "border-b-2 border-violet-600 text-violet-600"
+                      : "text-neutral-600 hover:text-neutral-900"
+                  }`}
+                >
+                  Layers ({shapes.length})
+                </button>
+              </div>
+            </div>
+
+            {/* Panel Content */}
+            <div className="flex-1 overflow-hidden">
+              {showLayersPanel ? (
+                <LayersPanel
+                  shapes={shapes}
+                  selectedId={selectedId}
+                  onSelectShape={setSelectedId}
+                  onUpdateShape={(id, patch) => {
+                    setShapes((prev) =>
+                      prev.map((s) => (s.id === id ? { ...s, ...patch } : s))
+                    );
+                  }}
+                  onReorderLayers={setShapes}
+                />
+              ) : (
+                <PropertiesPanel
+                  selectedShape={selectedShape}
+                  onUpdate={handleUpdateShape}
+                  onDelete={deleteSelected}
+                  onDuplicate={handleDuplicate}
+                  onLayerAction={handleLayerAction}
+                  onReplaceImage={handleReplaceImage}
+                />
+              )}
+            </div>
+          </div>
         }
         canvas={
           <CanvasArea

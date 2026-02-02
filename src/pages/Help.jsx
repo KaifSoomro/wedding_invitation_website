@@ -126,7 +126,6 @@ export default function Help() {
               { keys: 'Ctrl + Scroll', action: 'Zoom in/out' },
               { keys: '?', action: 'Show shortcuts help' },
               { keys: 'Esc', action: 'Deselect element' },
-              { keys: 'Ctrl + A', action: 'Select all (coming soon)' },
               { keys: 'Arrow Keys', action: 'Move selected element' },
             ].map((shortcut, index) => (
               <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded">

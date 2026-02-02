@@ -14,7 +14,6 @@ const TempContent = () => {
   useEffect(() => {
     const loadTemplates = () => {
       const merged = templateStorage.getMergedTemplates(templates);
-      console.log("Loaded templates:", merged.length, merged);
       setAllTemplates(merged);
     };
     

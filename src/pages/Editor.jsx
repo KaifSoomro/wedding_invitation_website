@@ -14,6 +14,7 @@ import {
 } from "react-konva";
 import { useNavigate, useParams } from "react-router-dom";
 import { templates } from "@/TemplateData";
+import { templateStorage } from "@/services/templateStorage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -87,7 +88,38 @@ const Editor = () => {
   const STAGE_WIDTH = 620;
   const STAGE_HEIGHT = 750;
 
-  const template = useMemo(() => templates.find((t) => t.id === Number(id)), [id]);
+  // Load template from merged sources (built-in + localStorage)
+  const template = useMemo(() => {
+    const mergedTemplates = templateStorage.getMergedTemplates(templates);
+    const found = mergedTemplates.find((t) => t.id === Number(id));
+    
+    if (!found) {
+      console.warn(`Template with ID ${id} not found`);
+    }
+    
+    return found;
+  }, [id]);
+
+  // Show error if template not found
+  if (id && !template) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center p-8 bg-white rounded-lg shadow-lg max-w-md">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">Template Not Found</h2>
+          <p className="text-gray-600 mb-6">
+            The template you're looking for (ID: {id}) could not be found.
+          </p>
+          <Button onClick={() => navigate(-1)} className="mr-2">
+            Go Back
+          </Button>
+          <Button onClick={() => navigate("/templates")} variant="outline">
+            Browse Templates
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   const engine = useCanvasEngine({
     templateId: id || null,
     initialBgUrl: template?.backgroundImage || null,

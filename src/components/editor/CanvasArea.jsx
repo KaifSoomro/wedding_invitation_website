@@ -15,8 +15,21 @@ import {
 import useImage from "use-image";
 import { useTouchGestures } from "@/hooks/useTouchGestures";
 
-const KImg = ({ src, ...rest }) => {
-  const [img] = useImage(src, "anonymous");
+const KImg = ({ src, onError, ...rest }) => {
+  const [img, status] = useImage(src, "anonymous");
+  
+  // Call onError callback if image fails to load
+  React.useEffect(() => {
+    if (status === "failed" && onError) {
+      onError();
+    }
+  }, [status, onError]);
+
+  // Only render if image loaded successfully
+  if (status === "loading" || status === "failed") {
+    return null;
+  }
+  
   return <KonvaImage image={img} {...rest} />;
 };
 
@@ -51,25 +64,39 @@ export const CanvasArea = ({
 
   const renderShape = useCallback(
     (shape, i) => {
+      // Skip invisible shapes
+      if (shape.visible === false) return null;
+
+      const isLocked = shape.locked === true;
+
       const common = {
         key: shape.id,
         id: `node-${shape.id}`,
-        draggable: true,
+        draggable: !isLocked,
         onClick: (e) => {
+          if (isLocked) return;
           e.cancelBubble = true;
           setSelectedId(shape.id);
         },
         onTap: (e) => {
+          if (isLocked) return;
           e.cancelBubble = true;
           setSelectedId(shape.id);
         },
         onDragStart: (e) => {
+          if (isLocked) {
+            e.cancelBubble = true;
+            e.target.stopDrag();
+            return;
+          }
           e.cancelBubble = true;
         },
         onDragMove: (e) => {
+          if (isLocked) return;
           e.cancelBubble = true;
         },
         onDragEnd: (e) => {
+          if (isLocked) return;
           e.cancelBubble = true;
           const node = e.target;
           // Constrain to canvas bounds
@@ -103,6 +130,7 @@ export const CanvasArea = ({
               strokeWidth={shape.strokeWidth}
               rotation={shape.rotation || 0}
               onDblClick={() => {
+                if (isLocked) return;
                 const stage = stageRef.current;
                 if (!stage) return;
                 const scale = stage.scaleX();
@@ -114,6 +142,7 @@ export const CanvasArea = ({
                 if (trRef.current) trRef.current.nodes([]);
               }}
               onTransformEnd={(e) => {
+                if (isLocked) return;
                 const node = e.target;
                 const newFontSize = (shape.fontSize || 24) * node.scaleY();
                 node.scaleX(1);
@@ -220,6 +249,42 @@ export const CanvasArea = ({
           );
         }
         case "image": {
+          // Show placeholder if imageSrc is missing
+          if (!shape.imageSrc) {
+            return (
+              <Rect
+                {...common}
+                x={shape.x}
+                y={shape.y}
+                width={shape.width || 100}
+                height={shape.height || 100}
+                fill="#e5e7eb"
+                stroke="#9ca3af"
+                strokeWidth={2}
+                opacity={shape.opacity ?? 1}
+                rotation={shape.rotation || 0}
+                cornerRadius={4}
+                onTransformEnd={(e) => {
+                  if (isLocked) return;
+                  const node = e.target;
+                  const updated = {
+                    ...shape,
+                    x: node.x(),
+                    y: node.y(),
+                    width: Math.max(5, (shape.width || 100) * node.scaleX()),
+                    height: Math.max(5, (shape.height || 100) * node.scaleY()),
+                    rotation: node.rotation(),
+                  };
+                  node.scaleX(1);
+                  node.scaleY(1);
+                  const next = [...shapes];
+                  next[i] = updated;
+                  setShapes(next);
+                }}
+              />
+            );
+          }
+
           return (
             <KImg
               {...common}
@@ -230,7 +295,12 @@ export const CanvasArea = ({
               src={shape.imageSrc}
               opacity={shape.opacity ?? 1}
               rotation={shape.rotation || 0}
+              listening={true}
+              onError={() => {
+                console.warn("Failed to load image:", shape.imageSrc);
+              }}
               onTransformEnd={(e) => {
+                if (isLocked) return;
                 const node = e.target;
                 const updated = {
                   ...shape,
@@ -347,7 +417,8 @@ export const CanvasArea = ({
             const stage = e.target.getStage();
             const clickedOnEmpty = e.target === stage;
 
-            if (placingTool && clickedOnEmpty) {
+            // If placing tool is active, allow clicking anywhere (on shapes or empty space)
+            if (placingTool) {
               const pointer = stage.getPointerPosition();
               const scale = stage.scaleX() || 1;
               const x = (pointer.x - stage.x()) / scale;
@@ -356,6 +427,7 @@ export const CanvasArea = ({
               // trigger parent to actually add the shape at this position
               const event = new CustomEvent("placeShape", { detail: { x, y } });
               window.dispatchEvent(event);
+              e.cancelBubble = true; // Stop event propagation
               return;
             }
 
